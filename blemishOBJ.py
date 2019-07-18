@@ -69,7 +69,7 @@ def blemishOBJ(obj):
         look_at(cam, obj.location)
     
 
-    # --- RENDERING IMAGES AND SAVING METADATA FOR EACH CAMERA
+    # --- RENDERING IMAGES AND SAVING METADATA FOR EACH CAMERA ---
 
 
     # setting scene/resolution variables for clarity
