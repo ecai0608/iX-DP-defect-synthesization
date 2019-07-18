@@ -4,6 +4,7 @@ import numpy as np
 import random
 
 # *** COMMAND TO RUN PYTHON/BLENDER API SCRIPTS IN TERMINAL: blender [myscene.blend] --background --python myscript.py ***
+# *** COMMAND TO SAVE FILE: bpy.ops.wm.save_as_mainfile(filepath = "[myscene.blend]") ***
 
 def blemishOBJ(obj):
     #obj = bpy.data.objects[object_name]
@@ -45,15 +46,12 @@ def blemishOBJ(obj):
             # saving image render to "renders" folder
             bpy.ops.render.render(write_still = True)
             bpy.data.images["Render Result"].save_render(filepath = ("renders/%s.png" % obj.name))
-            # writing image coordinates to text file
+            # writing image resolution and coordinates to text file
             binfile = open(("renders/%s.txt" % obj.name), "w")
+            binfile.write("Image Resolution: %sx%s\n" % (res_x, res_y))
             binfile.write("Image Coordinates: %s,%s" % (x, y))
 
 
 # running on test object
 test_object = bpy.data.objects["test_object"]
 blemishOBJ(test_object)
-
-
-# saving scene
-#bpy.ops.wm.save_as_mainfile(filepath = "testpoly.blend")
