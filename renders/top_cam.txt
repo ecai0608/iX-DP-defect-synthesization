@@ -1,0 +1,2 @@
+Image Resolution: 1920x1080
+Image Coordinates: 845,869
