@@ -28,7 +28,11 @@ def blemishOBJ(obj):
 
     # Generate weights for each vertice
     n = len(list(obj.data.vertices))
-    total_sum = np.sum(generate_pairs(n,obj))
+    vert_locs = []
+    for vert in obj.data.vertices :
+        vert_locs.append(np.array(vert.co[:]))
+
+    total_sum = np.sum(generate_pairs(n, vert_locs))
     weights = vert_weights(n,obj,total_sum)
 
     #pairwise_dists = np.sum(generate_pairs(n,obj), axis = 1)/total_sum
@@ -109,20 +113,20 @@ def blemishOBJ(obj):
                 binfile.write("     %d: %s,%s\n" % (i, x, y))
     
 
-def generate_pairs(n,obj):
+def generate_pairs(n, vert_locs):
     for row in range(n) :
         for col in range(n) :
             print("Distance pairs for {} being generated".format(row))
-            yield np.linalg.norm(np.array(obj.data.vertices[row].co[:]) - np.array(obj.data.vertices[col].co[:]))
+            yield np.linalg.norm(vert_locs[row] - vert_locs[col])
 
-def vert_weights(n,obj,total_sum):
+def vert_weights(n, vert_locs ,total_sum):
     weights = []
-    for i, vert1 in enumerate(obj.data.vertices):
+    for vert1 in range(n) :
         total_dist = 0
-        for vert2 in obj.data.vertices:
-            total_dist = total_dist + np.linalg.norm(np.array(vert1.co[:]) - np.array(vert2.co[:]))
+        for vert2 in range(n) :
+            total_dist = total_dist + np.linalg.norm(vert_locs[vert1] - vert_locs[vert2])
         weights.append(total_dist/total_sum)
-        print("Weight {} computed".format(i))
+        print("Weight {} computed".format(vert1))
     return weights
 
 
@@ -132,5 +136,5 @@ def vert_weights(n,obj,total_sum):
 
 
 # running on test object
-test_object = bpy.data.objects["test_object"]
+test_object = bpy.data.objects["Pistons"]
 blemishOBJ(test_object)
