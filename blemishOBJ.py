@@ -6,7 +6,7 @@ import numpy as np
 # *** COMMAND TO SAVE FILE: bpy.ops.wm.save_as_mainfile(filepath = "[myscene.blend]") ***
 
 # global parameters for number of defects and number of cameras
-num_verts = 8
+num_verts = 20
 num_cams = 5
 
 # function to point a given camera to a given location - credit: https://blender.stackexchange.com/a/5220
@@ -24,12 +24,26 @@ def look_at(obj_camera, point):
 # function to blemish object in given scene
 def blemishOBJ(obj):
 
+    # --- GENERATING VERTEX DENSITY WEIGHTS ---
+
+    n = len(list(obj.data.vertices))
+    pairwise_dists = np.zeros((n, n))
+
+    # store all pairwise dists
+    
+    for row in range(n) :
+        for col in range(n) :
+            pairwise_dists[row][col] = np.linalg.norm(np.array(obj.data.vertices[row].co[:]) - np.array(obj.data.vertices[col].co[:]))
+    
+
+
+    total_sum = np.sum(pairwise_dists)
+    pairwise_dists = np.sum(pairwise_dists, axis = 1)/total_sum
 
     # --- CREATING BLEMISHES ON 3D MODEL ---
 
-
     # choosing random vertices to blemish
-    rand_verts = np.random.choice(obj.data.vertices, num_verts, replace = False)
+    rand_verts = np.random.choice(obj.data.vertices, num_verts, p = pairwise_dists, replace = False)
 
     cos_3d = []
     for i, vert in enumerate(rand_verts) :
@@ -100,8 +114,14 @@ def blemishOBJ(obj):
 
                 # writing image resolution and coordinates to text file
                 binfile.write("     %d: %s,%s\n" % (i, x, y))
+    
+
+
+# PSEUDOCODE FOR VERTEX WEIGHTS:
+# Store pairwise distances in table
+# 
 
 
 # running on test object
-test_object = bpy.data.objects["test_object"]
+test_object = bpy.data.objects["Pistons"]
 blemishOBJ(test_object)
