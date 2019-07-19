@@ -26,24 +26,17 @@ def blemishOBJ(obj):
 
     # --- GENERATING VERTEX DENSITY WEIGHTS ---
 
+    # Generate weights for each vertice
     n = len(list(obj.data.vertices))
-    pairwise_dists = np.zeros((n, n))
+    total_sum = np.sum(generate_pairs(n,obj))
+    weights = vert_weights(n,obj,total_sum)
 
-    # store all pairwise dists
+    #pairwise_dists = np.sum(generate_pairs(n,obj), axis = 1)/total_sum
     
-    for row in range(n) :
-        for col in range(n) :
-            pairwise_dists[row][col] = np.linalg.norm(np.array(obj.data.vertices[row].co[:]) - np.array(obj.data.vertices[col].co[:]))
-    
-
-
-    total_sum = np.sum(pairwise_dists)
-    pairwise_dists = np.sum(pairwise_dists, axis = 1)/total_sum
-
     # --- CREATING BLEMISHES ON 3D MODEL ---
-
+    
     # choosing random vertices to blemish
-    rand_verts = np.random.choice(obj.data.vertices, num_verts, p = pairwise_dists, replace = False)
+    rand_verts = np.random.choice(obj.data.vertices, num_verts, p = weights, replace = False)
 
     cos_3d = []
     for i, vert in enumerate(rand_verts) :
@@ -116,6 +109,22 @@ def blemishOBJ(obj):
                 binfile.write("     %d: %s,%s\n" % (i, x, y))
     
 
+def generate_pairs(n,obj):
+    for row in range(n) :
+        for col in range(n) :
+            print("Distance pairs for {} being generated".format(row))
+            yield np.linalg.norm(np.array(obj.data.vertices[row].co[:]) - np.array(obj.data.vertices[col].co[:]))
+
+def vert_weights(n,obj,total_sum):
+    weights = []
+    for i, vert1 in enumerate(obj.data.vertices):
+        total_dist = 0
+        for vert2 in obj.data.vertices:
+            total_dist = total_dist + np.linalg.norm(np.array(vert1.co[:]) - np.array(vert2.co[:]))
+        weights.append(total_dist/total_sum)
+        print("Weight {} computed".format(i))
+    return weights
+
 
 # PSEUDOCODE FOR VERTEX WEIGHTS:
 # Store pairwise distances in table
@@ -123,5 +132,5 @@ def blemishOBJ(obj):
 
 
 # running on test object
-test_object = bpy.data.objects["Pistons"]
+test_object = bpy.data.objects["test_object"]
 blemishOBJ(test_object)

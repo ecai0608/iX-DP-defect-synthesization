@@ -51,3 +51,6 @@ mymesh.from_pydata(verts,[],faces)
 mymesh.update(calc_edges=True)
 
 print(' \n*******************************************\n ')
+
+
+
