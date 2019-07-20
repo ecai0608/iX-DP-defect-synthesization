@@ -3,8 +3,8 @@ from bpy_extras.object_utils import world_to_camera_view
 from bpy_extras.mesh_utils import face_random_points
 import numpy as np 
 
-# *** COMMAND TO RUN PYTHON/BLENDER API SCRIPTS IN TERMINAL: blender [myscene.blend] --background --python myscript.py ***
-# *** COMMAND TO SAVE FILE: bpy.ops.wm.save_as_mainfile(filepath = "[myscene.blend]") ***
+# *** TERMINAL COMAND: blender [myscene.blend] --background --python myscript.py ***
+# *** SAVE FILE: bpy.ops.wm.save_as_mainfile(filepath = "[myscene.blend]") ***
 
 # global parameters for number of defects and number of cameras
 num_defects = 30
