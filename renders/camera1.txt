@@ -1,0 +1,4 @@
+Image Resolution: 960.0x540.0
+Image Coordinates:
+     1: 366,6
+     2: 461,107
