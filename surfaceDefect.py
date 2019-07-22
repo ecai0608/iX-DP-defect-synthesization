@@ -166,14 +166,21 @@ def generate_defects(obj):
     # --- RENDERING IMAGES AND SAVING METADATA FOR EACH CAMERA ---
 
 
-    # setting scene/resolution variables for clarity
+    # setting render engine to CYCLES
     scene = bpy.context.scene
+    scene.render.engine = 'CYCLES'
+
+    # adjusting resolution and environment lighting
+    scene.render.resolution_percentage = 50
+    bpy.data.worlds["World"].horizon_color = (0.8, 0.8, 0.8)
+
+    # rendering images
     render_cameras(scene, obj, defect_locs)
     
 
 # running on test object
-test_object = bpy.data.objects["Pistons"]
+test_object = bpy.data.objects["test_object"]
 test_object.select = True
 bpy.context.scene.objects.active = test_object
 generate_defects(test_object)
-bpy.ops.wm.save_as_mainfile(filepath = "piston1.blend")
+bpy.ops.wm.save_as_mainfile(filepath = "testpoly1.blend")
