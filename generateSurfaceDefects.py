@@ -6,6 +6,7 @@ from mathutils import Vector
 from mathutils.bvhtree import BVHTree as tree
 
 import numpy as np 
+import random
 
 # *** TERMINAL COMAND: blender [myscene.blend] --background --python myscript.py ***
 # *** SAVE FILE: bpy.ops.wm.save_as_mainfile(filepath = "[myscene.blend]") ***
@@ -38,7 +39,7 @@ def calc_tess_weights(obj):
 
 
 # function to render images from all cameras in the scene and store metadata on image locations of defects
-def render_cameras(scene, obj, defect_locs):
+def render_images(scene, obj, defect_locs):
     render = scene.render
     render_scale = render.resolution_percentage / 100
 
@@ -110,47 +111,92 @@ def record_visible(scene, cam, bvh, defect_locs, res_x, res_y):
     binfile.close()
 
 
-# function to blemish object in given scene
+# function to subtract defects from part model
+def subtract_defect(obj, defect):
+    # selecting part model and setting it to active
+    bpy.ops.object.mode_set(mode = "OBJECT")
+    bpy.context.scene.objects.active = obj
+    obj.select = True
+
+    # adding modifier to part model
+    bpy.ops.object.modifier_add(type = "BOOLEAN")
+    subtract = obj.modifiers["Boolean"]
+    subtract.operation = "DIFFERENCE"
+    subtract.object = defect
+
+    """
+    obj.select = False
+    defect.select = True
+    bpy.context.scene.objects.active = defect
+    bpy.ops.object.mode_set(mode = "EDIT")
+    bpy.ops.mesh.select_all(action = "SELECT")
+    bpy.ops.mesh.normals_make_consistent(inside = False)
+    bpy.ops.object.mode_set(mode = "OBJECT")
+    defect.select = False
+    """
+
+    # applying modifier and deleting blemish
+    bpy.ops.object.modifier_apply(apply_as = "DATA", modifier = "Boolean")
+    obj.select = False
+    bpy.ops.object.delete(use_global = False)
+
+
+# function to generate defects on part model (obj)
 def generate_defects(obj):
     # modifying settings to ensure there are no errors with placement or edit mode
     bpy.ops.object.mode_set(mode = "OBJECT")
     bpy.ops.object.transform_apply(location = True, rotation = True, scale = True)
 
 
-    # --- CREATING BLEMISHES ON 3D MODEL ---
+    # --- CREATING DEFECTS ON 3D MODEL ---
     
+
     # randomly sampling faces (WITH replacement) using weights
     weights = calc_tess_weights(obj)
     rand_faces = np.random.choice(obj.data.tessfaces, num_defects, p = weights, replace = True)
 
-    # generating locations for each blemish
+    # generating locations for each defect
+    # Note: this implementation allows for multiple blemishes to be generated on the same face
     defect_locs = face_random_points(1, rand_faces)
 
-    # marking all defects with blemishes
+    # creating texture for microdisplacement
+    bpy.data.textures.new("noise", type = "DISTORTED_NOISE")
+
+    # placing defects at locations
+    noise = bpy.data.textures["noise"]
     for i, loc in enumerate(defect_locs):        
         name = "{}".format(i)
         bpy.ops.mesh.primitive_uv_sphere_add(location = loc)
         bpy.context.active_object.name = name
-        marker = bpy.data.objects[name]
+        defect = bpy.data.objects[name]
 
         # scaling blemish to smaller size
-        marker.scale.x = 0.01
-        marker.scale.y = 0.01
-        marker.scale.z = 0.01
+        defect.scale.x = 0.05
+        defect.scale.y = 0.05
+        defect.scale.z = 0.05
+
+        # adding noise
+        bpy.data.textures["noise"].distortion = 5
+        bpy.ops.object.modifier_add(type = "DISPLACE")
+        defect.modifiers["Displace"].texture = noise
         
+        """
         # assigning red material to each blemish
         blemish_mat = bpy.data.materials.new("blemish")
         blemish_mat.diffuse_color = (1, 0, 0)
-        marker.data.materials.append(blemish_mat)
+        defect.data.materials.append(blemish_mat)
+        """
+        # subtracting blemishes from model
+        subtract_defect(obj, defect)
 
 
-    # --- CREATING CAMERAS IN RANDOM LOCATIONS ---
+    # --- RENDERING IMAGES AND SAVING METADATA FOR RANDOMLY GENERATED CAMERA ---
 
 
     # randomly generating origins for each camera
     cam_verts = np.random.choice(obj.data.vertices, num_cams, replace = False)
 
-    # creating each camera, transforming them further away from the object, and re-orienting them to face the object
+    # creating each camera, translating them further away from the object, and re-orienting them to face the object
     for i, vert in enumerate(cam_verts):
         bpy.ops.object.camera_add(location = 4*vert.co)
 
@@ -158,10 +204,6 @@ def generate_defects(obj):
         bpy.context.active_object.name = cam_name
         cam = bpy.data.objects[cam_name]
         look_at(cam, obj.location)
-    
-
-    # --- RENDERING IMAGES AND SAVING METADATA FOR EACH CAMERA ---
-
 
     # setting render engine to CYCLES
     scene = bpy.context.scene
@@ -172,7 +214,7 @@ def generate_defects(obj):
     bpy.data.worlds["World"].horizon_color = (0.8, 0.8, 0.8)
 
     # rendering images
-    render_cameras(scene, obj, defect_locs)
+    render_images(scene, obj, defect_locs)
     
 
 # running on test object
