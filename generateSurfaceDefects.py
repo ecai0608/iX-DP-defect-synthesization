@@ -7,13 +7,14 @@ from mathutils.bvhtree import BVHTree as tree
 
 import numpy as np 
 import random
+import time
 
 # *** TERMINAL COMAND: blender [myscene.blend] --background --python myscript.py ***
 # *** SAVE FILE: bpy.ops.wm.save_as_mainfile(filepath = "[myscene.blend]") ***
 
 # global parameters for number of defects and number of cameras
-num_defects = 20
-num_cams = 5
+num_defects = 1
+num_cams = 1
 
 # function to point a given camera to a given location - credit: https://blender.stackexchange.com/a/5220
 def look_at(obj_camera, point):
@@ -113,6 +114,7 @@ def record_visible(scene, cam, bvh, defect_locs, res_x, res_y):
 
 # function to subtract defects from part model
 def subtract_defect(obj, defect):
+    time.sleep(5)
     # selecting part model and setting it to active
     bpy.ops.object.mode_set(mode = "OBJECT")
     bpy.context.scene.objects.active = obj
@@ -123,17 +125,6 @@ def subtract_defect(obj, defect):
     subtract = obj.modifiers["Boolean"]
     subtract.operation = "DIFFERENCE"
     subtract.object = defect
-
-    """
-    obj.select = False
-    defect.select = True
-    bpy.context.scene.objects.active = defect
-    bpy.ops.object.mode_set(mode = "EDIT")
-    bpy.ops.mesh.select_all(action = "SELECT")
-    bpy.ops.mesh.normals_make_consistent(inside = False)
-    bpy.ops.object.mode_set(mode = "OBJECT")
-    defect.select = False
-    """
 
     # applying modifier and deleting blemish
     bpy.ops.object.modifier_apply(apply_as = "DATA", modifier = "Boolean")
@@ -171,21 +162,16 @@ def generate_defects(obj):
         defect = bpy.data.objects[name]
 
         # scaling blemish to smaller size
-        defect.scale.x = 0.05
-        defect.scale.y = 0.05
-        defect.scale.z = 0.05
+        defect.scale.x = 0.04
+        defect.scale.y = 0.04
+        defect.scale.z = 0.10
 
         # adding noise
-        bpy.data.textures["noise"].distortion = 5
+        bpy.data.textures["noise"].distortion = 0.3
+        bpy.data.textures["noise"].noise_scale = 2
         bpy.ops.object.modifier_add(type = "DISPLACE")
         defect.modifiers["Displace"].texture = noise
-        
-        """
-        # assigning red material to each blemish
-        blemish_mat = bpy.data.materials.new("blemish")
-        blemish_mat.diffuse_color = (1, 0, 0)
-        defect.data.materials.append(blemish_mat)
-        """
+
         # subtracting blemishes from model
         subtract_defect(obj, defect)
 
@@ -214,12 +200,12 @@ def generate_defects(obj):
     bpy.data.worlds["World"].horizon_color = (0.8, 0.8, 0.8)
 
     # rendering images
-    render_images(scene, obj, defect_locs)
+    # render_images(scene, obj, defect_locs)
     
 
 # running on test object
-test_object = bpy.data.objects["test_object"]
-test_object.select = True
-bpy.context.scene.objects.active = test_object
-generate_defects(test_object)
-bpy.ops.wm.save_as_mainfile(filepath = "testpoly1.blend")
+model = bpy.data.objects["Suzanne"]
+model.select = True
+
+generate_defects(model)
+# bpy.ops.wm.save_as_mainfile(filepath = "testpoly1.blend")
