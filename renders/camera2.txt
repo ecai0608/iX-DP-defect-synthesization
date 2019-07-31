@@ -1,6 +1,2 @@
 Image Resolution: 960.0x540.0
-Defect's Bounding Box Image Coordinates:
-[ Defect 0 ]  : 367,204
-[ Defect 0 ]  : 367,226
-[ Defect 0 ]  : 394,204
-[ Defect 0 ]  : 394,226
+(553, 300)  (553, 353)  (590, 300)  (590, 353)

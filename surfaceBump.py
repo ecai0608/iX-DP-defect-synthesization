@@ -69,20 +69,6 @@ def render_images(scene, obj, defect_locs):
                 bpy.ops.render.render(write_still = True)
                 bpy.data.images["Render Result"].save_render(filepath = ("renders/%s.png" % cam.name))
 
-            """
-            # writing image coordinates to text file TO DO: ONLY RECORD METADATA OF "VISIBLE" POINTS
-            binfile = open(("renders/%s.txt" % cam.name), "w")
-            binfile.write("Image Resolution: %sx%s\n" % (res_x, res_y))
-            binfile.write("Image Coordinates:\n")
-            for i, coords in enumerate(defect_locs):
-                # computing image coordinates
-                co_2d = world_to_camera_view(scene, cam, coords)
-                x, y = round(res_x*co_2d[0]), round(res_y*(1 - co_2d[1]))
-
-                # writing image resolution and coordinates to text file
-                binfile.write("     %d: %s,%s\n" % (i, x, y))
-            """
-
 
 # function to record metadata for visible defects for a specific camera
 def record_visible_verts(scene, cam, bvh, defect_locs, res_x, res_y):
