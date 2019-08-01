@@ -25,8 +25,8 @@ import time
 # RES_Y           - resolution of image y-axis
 # -------------------------------------------------------------------------------
 
-NUM_DEFECTS = 5
-NUM_CAMS = 3
+NUM_DEFECTS = 8
+NUM_CAMS = 4
 DEFECT_TYPES = ["PIT", "BUMP"]
 VISIBLE_DEFECTS = np.zeros((NUM_CAMS, NUM_DEFECTS))
 BOUNDING_BOXES = []
@@ -104,7 +104,7 @@ def record_visible(cameras, obj, bvh, defect_index):
 
 
 # function to record bounding boxes of visible defects
-def record_bound_boxes(cameras, defect_index):
+def record_bound_boxes(cameras, defect_type, defect_index):
     bb = BOUNDING_BOXES[defect_index]
     
     # iterating through each randomly generated camera
@@ -139,6 +139,7 @@ def record_bound_boxes(cameras, defect_index):
 
             # writing image coordinates to text file
             binfile = open("renders/{}.txt".format(cam.name), "a")
+            binfile.write("{}  |  ".format(defect_type))
             binfile.write("({}, {})  ({}, {})  ({}, {})  ({}, {})\n".format(min_x, min_y, min_x, max_y, max_x, min_y, max_x, max_y))
             binfile.close()
 
@@ -314,7 +315,7 @@ def generate_defects(obj):
         
         # recording metadata regarding visibility and location of defect
         record_visible(cameras, obj, bvh, defect_index)
-        record_bound_boxes(cameras, defect_index)
+        record_bound_boxes(cameras, defect_type, defect_index)
         
 
     # --- RENDERING IMAGES ---
