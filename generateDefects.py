@@ -191,9 +191,9 @@ def build_pit(defect_loc, defect_index, align):
 
     # scaling defect to smaller size
     # NOTE: long axis should be defined along z-axis to align properly with rotation_euler
-    defect.scale.x = 0.04
-    defect.scale.y = 0.04
-    defect.scale.z = 0.10    
+    defect.scale.x = 0.05
+    defect.scale.y = 0.05
+    defect.scale.z = 0.12    
 
     # realigning ellipsoid
     defect.rotation_euler = align
@@ -217,9 +217,9 @@ def build_bump(defect_loc, defect_index, align, noise):
     defect = bpy.data.objects[name]
 
     # scaling defect
-    defect.scale.x = 0.05
-    defect.scale.y = 0.05
-    defect.scale.z = 0.05
+    defect.scale.x = 0.08
+    defect.scale.y = 0.08
+    defect.scale.z = 0.08
     """
     # create new material
     bpy.ops.material.new()
@@ -324,8 +324,9 @@ def generate_defects(obj):
     
 
 # running on test object
-model = bpy.data.objects["Suzanne"]
+model = bpy.data.objects["Object"]
+bpy.context.scene.objects.active = model
 model.select = True
 
 generate_defects(model)
-bpy.ops.wm.save_as_mainfile(filepath = "manifold1.blend")
+bpy.ops.wm.save_as_mainfile(filepath = "bearing1.blend")
