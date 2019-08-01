@@ -9,197 +9,318 @@ import numpy as np
 import random
 import time
 
-# *** TERMINAL COMAND: blender [myscene.blend] --background --python myscript.py ***
+# *** TERMINAL COMMAND: blender [myscene.blend] --background --python myscript.py ***
 # *** SAVE FILE: bpy.ops.wm.save_as_mainfile(filepath = "[myscene.blend]") ***
 
-# global parameters for number of defects and number of cameras
-num_defects = 1
-num_cams = 1
+
+# -------------------------------------------------------------------------------
+# GLOBAL PARAMETERS:
+# NUM_DEFECTS     - number of defects to randomly generate
+# NUM_CAMS        - number of cameras to randomly generate
+# DEFECT_TYPES    - list of possible defect types ("PIT", "BUMP")
+# VISIBLE_DEFECTS - table to store which defects are visible from which camera
+# BOUNDING_BOXES  - list to store bounding boxes of generated defects
+# SCENE           - scene from Blender file (used for image rendering)
+# RES_X           - resolution of image x-axis
+# RES_Y           - resolution of image y-axis
+# -------------------------------------------------------------------------------
+
+NUM_DEFECTS = 8
+NUM_CAMS = 6
+DEFECT_TYPES = ["PIT", "BUMP"]
+VISIBLE_DEFECTS = np.zeros((NUM_CAMS, NUM_DEFECTS))
+BOUNDING_BOXES = []
+
+SCENE = bpy.context.scene
+
+# setting render engine to CYCLES
+SCENE.render.engine = "CYCLES"
+bpy.data.worlds["World"].horizon_color = (0.8, 0.8, 0.8)
+
+# scaling and setting resolution values
+render = SCENE.render
+RES_X = render.resolution_x*(SCENE.render.resolution_percentage / 100)
+RES_Y = render.resolution_y*(SCENE.render.resolution_percentage / 100)
+
 
 # function to point a given camera to a given location - credit: https://blender.stackexchange.com/a/5220
 def look_at(obj_camera, point):
     loc_camera = obj_camera.matrix_world.to_translation()
 
     direction = point - loc_camera
-    # point the cameras '-Z' and use its 'Y' as up
+    # point the camera's '-Z' and use its 'Y' as up
     rot_quat = direction.to_track_quat('-Z', 'Y')
 
     # assume we're using euler rotation
     obj_camera.rotation_euler = rot_quat.to_euler()
 
 
-# function to tessellate the object and calculate weights for each tessellated face
+# function to tessellate the object and calculate weights for the tessellated faces
 def calc_tess_weights(obj):
     # tessellating object model
     obj.data.calc_tessface()
 
-    # assigning weights to faces corresponding to surface area
+    #assigning weights to faces corresponding to surface area
     weights = [w.area for w in obj.data.tessfaces]
     weights = weights/np.sum(weights)
     return weights
 
 
-# function to render images from all cameras in the scene and store metadata on image locations of defects
-def render_images(scene, obj, defect_locs):
-    render = scene.render
-    render_scale = render.resolution_percentage / 100
+# function to record locations of visible defects
+def record_visible(cameras, obj, bvh, defect_index):
+    # obtaining all new defect vertices
+    new_vertices = []
+    for v in obj.data.vertices:
+        if v.select:
+            new_vertices.append(v.co.copy())
 
-    # scaling resolution values
-    res_x = render.resolution_x*render_scale
-    res_y = render.resolution_y*render_scale
-    
-    # building BVHTree of object model
-    bvh = tree.FromObject(obj, scene, epsilon = 0)
+    # deselecting all new vertices
+    bpy.context.scene.objects.active = obj
+    bpy.ops.object.mode_set(mode = "EDIT")
+    bpy.ops.mesh.select_all(action = "DESELECT")
+    bpy.ops.object.mode_set(mode = "OBJECT")
 
-    # iterating through all cameras to render images
-    for cam in bpy.data.objects:
-        if (cam.type == "CAMERA"):
-            # setting camera to active camera
-            bpy.context.scene.camera = cam
+    # iterating through each randomly generated camera
+    for cam_index in range(NUM_CAMS):
+        cam = cameras[cam_index]
 
-            # saving image render to "renders" folder
-            bpy.ops.render.render(write_still = True)
-            bpy.data.images["Render Result"].save_render(filepath = ("renders/%s.png" % cam.name))
+        # -- COLLISION DETECTION -- 
 
-            # recording metadata for camera
-            record_visible(scene, cam, bvh, defect_locs, res_x, res_y)
-            """
-            # writing image coordinates to text file TO DO: ONLY RECORD METADATA OF "VISIBLE" POINTS
-            binfile = open(("renders/%s.txt" % cam.name), "w")
-            binfile.write("Image Resolution: %sx%s\n" % (res_x, res_y))
-            binfile.write("Image Coordinates:\n")
-            for i, coords in enumerate(defect_locs):
+        for coords in new_vertices:
+            direction = cam.location - coords
+            ray = bvh.ray_cast(coords + 0.001*direction, direction)
+
+            # if the ray does not record a hit, this means the original defect location is visible
+            if ray[0] == None:
                 # computing image coordinates
-                co_2d = world_to_camera_view(scene, cam, coords)
-                x, y = round(res_x*co_2d[0]), round(res_y*(1 - co_2d[1]))
-                # writing image resolution and coordinates to text file
-                binfile.write("     %d: %s,%s\n" % (i, x, y))
-            """
+                co_2d = world_to_camera_view(SCENE, cam, coords)
+
+                # -- IMAGE BOUNDARY DETECTION -- 
+
+                if (co_2d[0] >= 0 and co_2d[0] <= 1 and co_2d[1] >= 0 and co_2d[1] <= 1):
+                    # updating VISIBLE_DEFECTS
+                    VISIBLE_DEFECTS[cam_index][defect_index] = 1
+                    break
 
 
-# function to record metadata for visible defects for a specific camera
-def record_visible(scene, cam, bvh, defect_locs, res_x, res_y):
-    # opening metadata file for given camera
-    binfile = open(("renders/%s.txt" % cam.name), "w")
-    binfile.write("Image Resolution: %sx%s\n" % (res_x, res_y))
-    binfile.write("Image Coordinates:\n")
+# function to record bounding boxes of visible defects
+def record_bound_boxes(cameras, defect_index):
+    bb = BOUNDING_BOXES[defect_index]
+    
+    # iterating through each randomly generated camera
+    for cam_index in range(NUM_CAMS):
+        cam = cameras[cam_index]
 
-    # counter to keep track of visible defects (will probably remove later - this is just to check the script)
-    i = 0
+        # checking if the defect is visble
+        if (VISIBLE_DEFECTS[cam_index][defect_index] == 1):
+            # store x and y coordinates of each vertex of the bounding box in the camera space
+            bound_xs = []
+            bound_ys = []
+            for vert_index in range(len(bb)):
+                vert_coords = Vector(bb[vert_index])
 
-    # looping through each defect location in 3D space
-    for coords in defect_locs:
+                # computing coordinates in camera space
+                co_2d = world_to_camera_view(SCENE, cam, vert_coords)
+                x, y = round(RES_X*co_2d[0]), round(RES_Y*(1 - co_2d[1]))
+                bound_xs.append(x)
+                bound_ys.append(y)
 
-        # --- COLLISION DETECTION --- 
+            # using minimum and maximium x and y values to define bounding box in the camera space
+            min_x = min(bound_xs)
+            max_x = max(bound_xs)
+            min_y = min(bound_ys)
+            max_y = max(bound_ys)
 
-        # casting ray from defect location back to camera
-        direction = cam.location - coords
-        ray = bvh.ray_cast(coords + 0.001*direction, direction)
+            # clipping coordinates to lie within the image boundary
+            min_x = max(0, min_x)
+            max_x = min(RES_X, max_x)
+            min_y = max(0, min_y)
+            max_y = min(RES_Y, max_y)
 
-        # if the ray does not record a hit, this means the original defect location is visible
-        if ray[0] == None:
-            # computing image coordinates
-            co_2d = world_to_camera_view(scene, cam, coords)
-
-            # --- IMAGE BOUNDARY DETECTION ---
-            if (co_2d[0] >= 0 and co_2d[0] <= 1 and co_2d[1] >= 0 and co_2d[1] <= 1):
-                x, y = round(res_x*co_2d[0]), round(res_y*(1 - co_2d[1]))
-
-                # writing image coordinates to text file - defect must be within image boundary and have unobstructed view
-                i = i + 1
-                binfile.write("     %d: %s,%s\n" % (i, x, y))            
-    binfile.close()
+            # writing image coordinates to text file
+            binfile = open("renders/{}.txt".format(cam.name), "a")
+            binfile.write("({}, {})  ({}, {})  ({}, {})  ({}, {})\n".format(min_x, min_y, min_x, max_y, max_x, min_y, max_x, max_y))
+            binfile.close()
 
 
-# function to subtract defects from part model
-def subtract_defect(obj, defect):
-    time.sleep(5)
-    # selecting part model and setting it to active
+# function to subtract defect models from part model
+def subtract_defect(obj, defect, defect_type):
+    # selecting part model and setting it to active object
     bpy.ops.object.mode_set(mode = "OBJECT")
     bpy.context.scene.objects.active = obj
     obj.select = True
 
-    # adding modifier to part model
+    # adding boolean modifier to part model
     bpy.ops.object.modifier_add(type = "BOOLEAN")
-    subtract = obj.modifiers["Boolean"]
-    subtract.operation = "DIFFERENCE"
-    subtract.object = defect
+    modify = obj.modifiers["Boolean"]
+    if (defect_type == "PIT"):
+        modify.operation = "DIFFERENCE"
+    elif (defect_type == "BUMP"):
+        modify.operation = "UNION"
+    modify.object = defect
 
     # applying modifier and deleting blemish
     bpy.ops.object.modifier_apply(apply_as = "DATA", modifier = "Boolean")
     obj.select = False
+    bpy.context.scene.objects.active = defect
     bpy.ops.object.delete(use_global = False)
+
+
+# function to render images for each camera
+def render_cameras(cameras):
+    # iterating through each randomly generated camera
+    for cam_index in range(NUM_CAMS):
+        if (sum(VISIBLE_DEFECTS[cam_index][:]) > 0):
+            cam = cameras[cam_index]
+
+            # setting camera to active camera
+            SCENE.camera = cam
+
+            # saving image render to renders folder
+            bpy.ops.render.render(write_still = True)
+            bpy.data.images["Render Result"].save_render(filepath = "renders/{}.png".format(cam.name))
+
+
+# function to create pit at given location
+def build_pit(defect_loc, defect_index, align):
+    # creating pit model
+    name = "{}".format(defect_index)
+    bpy.ops.mesh.primitive_uv_sphere_add(location = defect_loc)
+    bpy.context.active_object.name = name
+    defect = bpy.data.objects[name]
+
+    # scaling defect to smaller size
+    # NOTE: long axis should be defined along z-axis to align properly with rotation_euler
+    defect.scale.x = 0.04
+    defect.scale.y = 0.04
+    defect.scale.z = 0.10    
+
+    # realigning ellipsoid
+    defect.rotation_euler = align
+
+    bpy.ops.object.transform_apply(location = True, rotation = True, scale = True)
+    return defect
+
+
+# function to create bump at given location
+def build_bump(defect_loc, defect_index, align, noise):
+    # creating bump model
+    name = "{}".format(defect_index)
+    bpy.ops.mesh.primitive_cube_add(location = defect_loc)
+
+    # subdivide model
+    bpy.ops.object.mode_set(mode = "EDIT")
+    for subdivide in range(3):
+        bpy.ops.mesh.subdivide()
+    bpy.ops.object.mode_set(mode = "OBJECT")
+    bpy.context.active_object.name = name
+    defect = bpy.data.objects[name]
+
+    # scaling defect
+    defect.scale.x = 0.05
+    defect.scale.y = 0.05
+    defect.scale.z = 0.05
+    """
+    # create new material
+    bpy.ops.material.new()
+
+    # adding noise
+    noise.distortion = 6 #random.randint(6, 10)
+    noise.noise_scale = 1 #random.randint(0, 2)
+    bpy.ops.object.modifier_add(type = "DISPLACE")
+    defect.modifiers["Displace"].texture = noise
+    defect.modifiers["Displace"].strength = 0.2
+
+    # adding subsurf
+    bpy.ops.object.modifier_add(type = "SUBSURF")
+    defect.modifiers["Subsurf"].levels = 2
+    """
+    bpy.ops.object.transform_apply(location = True, rotation = True, scale = True)
+    return defect
 
 
 # function to generate defects on part model (obj)
 def generate_defects(obj):
-    # modifying settings to ensure there are no errors with placement or edit mode
+
+
+    # --- SETTING ENVIRONMENT VARIABLES ---
+
+
+    # modifying settings to ensure that there are no errors with placement or edit mode
     bpy.ops.object.mode_set(mode = "OBJECT")
     bpy.ops.object.transform_apply(location = True, rotation = True, scale = True)
 
-
-    # --- CREATING DEFECTS ON 3D MODEL ---
-    
-
-    # randomly sampling faces (WITH replacement) using weights
-    weights = calc_tess_weights(obj)
-    rand_faces = np.random.choice(obj.data.tessfaces, num_defects, p = weights, replace = True)
-
-    # generating locations for each defect
-    # Note: this implementation allows for multiple blemishes to be generated on the same face
-    defect_locs = face_random_points(1, rand_faces)
-
-    # creating texture for microdisplacement
-    bpy.data.textures.new("noise", type = "DISTORTED_NOISE")
-
-    # placing defects at locations
-    noise = bpy.data.textures["noise"]
-    for i, loc in enumerate(defect_locs):        
-        name = "{}".format(i)
-        bpy.ops.mesh.primitive_uv_sphere_add(location = loc)
-        bpy.context.active_object.name = name
-        defect = bpy.data.objects[name]
-
-        # scaling blemish to smaller size
-        defect.scale.x = 0.04
-        defect.scale.y = 0.04
-        defect.scale.z = 0.10
-
-        # adding noise
-        bpy.data.textures["noise"].distortion = 0.3
-        bpy.data.textures["noise"].noise_scale = 2
-        bpy.ops.object.modifier_add(type = "DISPLACE")
-        defect.modifiers["Displace"].texture = noise
-
-        # subtracting blemishes from model
-        subtract_defect(obj, defect)
+    # generating BVH tree of part model to allow efficient raycasting
+    bvh = tree.FromObject(obj, SCENE, epsilon = 0)
 
 
-    # --- RENDERING IMAGES AND SAVING METADATA FOR RANDOMLY GENERATED CAMERA ---
+    # --- RANDOMLY GENERATING CAMERAS AROUND OBJECT MODEL ---
 
 
-    # randomly generating origins for each camera
-    cam_verts = np.random.choice(obj.data.vertices, num_cams, replace = False)
+    # randomly generating origins for each camera using vertices of object model
+    cam_verts = np.random.choice(obj.data.vertices, NUM_CAMS, replace = False)
 
-    # creating each camera, translating them further away from the object, and re-orienting them to face the object
-    for i, vert in enumerate(cam_verts):
-        bpy.ops.object.camera_add(location = 4*vert.co)
+    cameras = []
+    # creating each camera, translating them away from the object, and re-orienting them to face the object
+    for i in range (NUM_CAMS):
+        bpy.ops.object.camera_add(location = 4*cam_verts[i].co)
 
         cam_name = "camera{}".format(i)
         bpy.context.active_object.name = cam_name
         cam = bpy.data.objects[cam_name]
         look_at(cam, obj.location)
+        cameras.append(cam)
 
-    # setting render engine to CYCLES
-    scene = bpy.context.scene
-    scene.render.engine = 'CYCLES'
+        # opening text file to store metadata for newly generated camera
+        binfile = open("renders/{}.txt".format(cam_name), "w")
+        binfile.write("Image Resolution: {}x{}\n".format(RES_X, RES_Y))
+        binfile.close()
 
-    # adjusting resolution and environment lighting
-    scene.render.resolution_percentage = 50
-    bpy.data.worlds["World"].horizon_color = (0.8, 0.8, 0.8)
+    
+    # --- CREATING DEFECTS ON 3D MODEL ---
 
-    # rendering images
-    render_images(scene, obj, defect_locs)
+    
+    # randomly sampling faces (WITH replacement) using weights based on surface area
+    weights = calc_tess_weights(obj)
+    rand_faces = np.random.choice(obj.data.tessfaces, NUM_DEFECTS, p = weights, replace = True)
+    
+    # creating a list to store normal vectors - this will allow us to align defects AFTER we have changed the geometry of the surface
+    defect_normals = [np.array(face.normal) for face in rand_faces]
+
+    # generating locations for each defect by randomly choosing a point on each face
+    # NOTE: this implementation allows for multiple defects to be generated on the same face
+    defect_locs = face_random_points(1, rand_faces)
+    rand_faces = None
+
+    # creating texture for microdisplacement
+    bpy.data.textures.new("noise", type = "DISTORTED_NOISE")
+    noise = bpy.data.textures["noise"]
+
+    # placing defects at locations
+    for defect_index in range(NUM_DEFECTS):
+        defect_type = random.choice(DEFECT_TYPES)
+        defect_loc = defect_locs[defect_index]
+
+        # creating defect model and deforming surface of part model
+        align = defect_normals[defect_index]
+        if (defect_type == "PIT"):
+            defect = build_pit(defect_loc, defect_index, align)
+            BOUNDING_BOXES.append(defect.bound_box)
+            subtract_defect(obj, defect, defect_type)
+        elif (defect_type == "BUMP"):
+            defect = build_bump(defect_loc, defect_index, align, noise)
+            BOUNDING_BOXES.append(defect.bound_box)
+            subtract_defect(obj, defect, defect_type)
+        
+        # recording metadata regarding visibility and location of defect
+        record_visible(cameras, obj, bvh, defect_index)
+        record_bound_boxes(cameras, defect_index)
+        
+
+    # --- RENDERING IMAGES ---
+
+
+    render_cameras(cameras)
     
 
 # running on test object
@@ -207,4 +328,4 @@ model = bpy.data.objects["Suzanne"]
 model.select = True
 
 generate_defects(model)
-# bpy.ops.wm.save_as_mainfile(filepath = "testpoly1.blend")
+bpy.ops.wm.save_as_mainfile(filepath = "manifold1.blend")
