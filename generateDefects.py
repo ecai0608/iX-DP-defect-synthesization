@@ -25,8 +25,8 @@ import time
 # RES_Y           - resolution of image y-axis
 # -------------------------------------------------------------------------------
 
-NUM_DEFECTS = 8
-NUM_CAMS = 6
+NUM_DEFECTS = 5
+NUM_CAMS = 3
 DEFECT_TYPES = ["PIT", "BUMP"]
 VISIBLE_DEFECTS = np.zeros((NUM_CAMS, NUM_DEFECTS))
 BOUNDING_BOXES = []
