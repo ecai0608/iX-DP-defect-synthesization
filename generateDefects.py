@@ -25,9 +25,9 @@ import time
 # RES_Y           - resolution of image y-axis
 # -------------------------------------------------------------------------------
 
-NUM_DEFECTS = 8
-NUM_CAMS = 4
-DEFECT_TYPES = ["PIT", "BUMP"]
+NUM_DEFECTS = 3
+NUM_CAMS = 2
+DEFECT_TYPES = ["PIT"]
 VISIBLE_DEFECTS = np.zeros((NUM_CAMS, NUM_DEFECTS))
 BOUNDING_BOXES = []
 
@@ -143,6 +143,11 @@ def record_bound_boxes(cameras, defect_type, defect_index):
             binfile.write("({}, {})  ({}, {})  ({}, {})  ({}, {})\n".format(min_x, min_y, min_x, max_y, max_x, min_y, max_x, max_y))
             binfile.close()
 
+            # writing to annotations
+            binfile = open("annotations.csv", "a")
+            binfile.write("renders/{}.txt,{},{},{},{},{}\n".format(cam.name, min_x, min_y, max_x, max_y, defect_type))
+            binfile.close()
+
 
 # function to subtract defect models from part model
 def subtract_defect(obj, defect, defect_type):
@@ -154,10 +159,13 @@ def subtract_defect(obj, defect, defect_type):
     # adding boolean modifier to part model
     bpy.ops.object.modifier_add(type = "BOOLEAN")
     modify = obj.modifiers["Boolean"]
+    modify.operation = "DIFFERENCE"
+    """
     if (defect_type == "PIT"):
         modify.operation = "DIFFERENCE"
     elif (defect_type == "BUMP"):
         modify.operation = "UNION"
+    """
     modify.object = defect
 
     # applying modifier and deleting blemish
@@ -179,22 +187,22 @@ def render_cameras(cameras):
 
             # saving image render to renders folder
             bpy.ops.render.render(write_still = True)
-            bpy.data.images["Render Result"].save_render(filepath = "renders/{}.png".format(cam.name))
+            bpy.data.images["Render Result"].save_render(filepath = "renders/{}.jpg".format(cam.name))
 
 
 # function to create pit at given location
 def build_pit(defect_loc, defect_index, align):
     # creating pit model
     name = "{}".format(defect_index)
-    bpy.ops.mesh.primitive_uv_sphere_add(location = defect_loc)
+    bpy.ops.mesh.primitive_uv_sphere_add(segments = 256, ring_count = 128, location = defect_loc)
     bpy.context.active_object.name = name
     defect = bpy.data.objects[name]
 
     # scaling defect to smaller size
     # NOTE: long axis should be defined along z-axis to align properly with rotation_euler
-    defect.scale.x = 0.05
-    defect.scale.y = 0.05
-    defect.scale.z = 0.12    
+    defect.scale.x = 0.05 + random.uniform(-0.01, 0.01)
+    defect.scale.y = 0.05 + random.uniform(-0.01, 0.01)
+    defect.scale.z = 0.05 + random.uniform(-0.01, 0.01)    
 
     # realigning ellipsoid
     defect.rotation_euler = align
@@ -259,7 +267,7 @@ def generate_defects(obj):
 
 
     # randomly generating origins for each camera using vertices of object model
-    cam_verts = np.random.choice(obj.data.vertices, NUM_CAMS, replace = False)
+    cam_verts = np.random.choice(obj.data.vertices, NUM_CAMS, replace = True)
 
     cameras = []
     # creating each camera, translating them away from the object, and re-orienting them to face the object
@@ -277,7 +285,11 @@ def generate_defects(obj):
         binfile.write("Image Resolution: {}x{}\n".format(RES_X, RES_Y))
         binfile.close()
 
+    # creating annotations .csv file
+    binfile = open("annotations.csv", "w")
+    binfile.close()
     
+
     # --- CREATING DEFECTS ON 3D MODEL ---
 
     
@@ -301,18 +313,14 @@ def generate_defects(obj):
     for defect_index in range(NUM_DEFECTS):
         defect_type = random.choice(DEFECT_TYPES)
         defect_loc = defect_locs[defect_index]
+        print(defect_type)
 
         # creating defect model and deforming surface of part model
         align = defect_normals[defect_index]
-        if (defect_type == "PIT"):
-            defect = build_pit(defect_loc, defect_index, align)
-            BOUNDING_BOXES.append(defect.bound_box)
-            subtract_defect(obj, defect, defect_type)
-        elif (defect_type == "BUMP"):
-            defect = build_bump(defect_loc, defect_index, align, noise)
-            BOUNDING_BOXES.append(defect.bound_box)
-            subtract_defect(obj, defect, defect_type)
-        
+        defect = build_pit(defect_loc, defect_index, align)
+        BOUNDING_BOXES.append(defect.bound_box)
+        subtract_defect(obj, defect, defect_type)
+
         # recording metadata regarding visibility and location of defect
         record_visible(cameras, obj, bvh, defect_index)
         record_bound_boxes(cameras, defect_type, defect_index)
@@ -330,4 +338,4 @@ bpy.context.scene.objects.active = model
 model.select = True
 
 generate_defects(model)
-bpy.ops.wm.save_as_mainfile(filepath = "bearing1.blend")
+bpy.ops.wm.save_as_mainfile(filepath = "disc1.blend")
