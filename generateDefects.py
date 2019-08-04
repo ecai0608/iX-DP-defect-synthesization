@@ -24,7 +24,7 @@ import time
 
 FILEPATH = "disc_brake_model.blend"
 NUM_DEFECTS = 6
-NUM_CAMS = 2
+NUM_CAMS = 10
 DEFECT_TYPES = ["PIT"]
 
 
@@ -34,11 +34,15 @@ def load_environment():
     # opening .blend file
     bpy.ops.wm.open_mainfile(filepath = FILEPATH)
     
-    # setting obj and scene
+    # setting obj
     obj = bpy.data.objects["Object"]
     bpy.context.scene.objects.active = obj
     obj.select = True
+    bpy.ops.object.transform_apply(location = True, rotation = True, scale = True)
     scene = bpy.context.scene
+
+    # setting to OBJECT mode
+    bpy.ops.object.mode_set(mode = "OBJECT")
 
     # setting render engine to CYCLES
     scene.render.engine = "CYCLES"
@@ -55,7 +59,23 @@ def load_environment():
     # table to store visibility of each defect with respect to each camera
     visible_defects = np.zeros((NUM_CAMS, NUM_DEFECTS))
 
-    return obj, scene, res_x, res_y, bounding_boxes, visible_defects
+    # computing radius and center of bounding sphere of object
+    bb = obj.bound_box
+    bound_xs = []
+    bound_ys = []
+    bound_zs = []
+    for vert in bb:
+        coords = Vector(vert)
+        bound_xs.append(coords[0])
+        bound_ys.append(coords[1])
+        bound_zs.append(coords[2])
+    [min_x, max_x] = [min(bound_xs), max(bound_xs)]
+    [min_y, max_y] = [min(bound_ys), max(bound_ys)]
+    [min_z, max_z] = [min(bound_zs), max(bound_zs)]
+    center = Vector([np.mean(bound_xs), np.mean(bound_ys), np.mean(bound_zs)])
+    radius = np.sqrt((max_x - min_x)**2 + (max_y - min_y)**2 + (max_z - max_z)**2)/2
+    
+    return obj, scene, res_x, res_y, bounding_boxes, visible_defects, center, radius
 
 
 # function to randomize environment of scene
@@ -64,6 +84,7 @@ def randomize_environment(obj):
     obj.rotation_euler[0] = random.uniform(0, 2*math.pi)
     obj.rotation_euler[1] = random.uniform(0, 2*math.pi)
     obj.rotation_euler[2] = random.uniform(0, 2*math.pi)
+    bpy.ops.object.transform_apply(location = True, rotation = True, scale = True)
 
 
 # function to point a given camera to a given location - credit: https://blender.stackexchange.com/a/5220
@@ -92,11 +113,12 @@ def calc_tess_weights(obj):
 # function to record locations of visible defects
 def record_visible(obj, scene, visible_defects, cameras, bvh, defect_index):
     # obtaining all new defect vertices
-    new_vertices = []
+    new_vertices = [v.co.copy() for v in obj.data.vertices if v.select]
+    """
     for v in obj.data.vertices:
         if v.select:
             new_vertices.append(v.co.copy())
-
+    """
     # deselecting all new vertices
     bpy.context.scene.objects.active = obj
     bpy.ops.object.mode_set(mode = "EDIT")
@@ -202,7 +224,7 @@ def subtract_defect(obj, defect, defect_type):
 def render_cameras(scene, visible_defects, cameras):
     # iterating through each randomly generated camera
     for cam_index in range(NUM_CAMS):
-        if (sum(visible_defects[cam_index][:]) > 0):
+        if (sum(visible_defects[cam_index][:]) >= 0):
             cam = cameras[cam_index]
 
             # setting camera to active camera
@@ -273,15 +295,14 @@ def build_bump(defect_loc, defect_index, align, noise):
 
 # function to generate defects on part model (obj)
 def generate_defects():
+    reset_model = False
+
+
     # --- LOADING AND SETTING ENVIRONMENT VARIABLES ---
 
 
-    obj, scene, res_x, res_y, bounding_boxes, visible_defects = load_environment()
+    obj, scene, res_x, res_y, bounding_boxes, visible_defects, center, radius = load_environment()
     randomize_environment(obj)
-
-    # modifying settings to ensure that there are no errors with placement or edit mode
-    bpy.ops.object.mode_set(mode = "OBJECT")
-    bpy.ops.object.transform_apply(location = True, rotation = True, scale = True)
 
     # generating BVH tree of part model to allow efficient raycasting
     bvh = tree.FromObject(obj, scene, epsilon = 0)
@@ -290,14 +311,25 @@ def generate_defects():
     # --- RANDOMLY GENERATING CAMERAS AROUND OBJECT MODEL ---
 
 
-    # randomly generating origins for each camera using vertices of object model
-    cam_verts = np.random.choice(obj.data.vertices, NUM_CAMS, replace = True)
-
     cameras = []
     # creating each camera, translating them away from the object, and re-orienting them to face the object
     for i in range (NUM_CAMS):
-        bpy.ops.object.camera_add(location = 4*cam_verts[i].co)
+        # randomly sampling from the bounding sphere using spherical coordinates
+        theta = random.uniform(0, 2*math.pi)
+        phi = random.uniform(0, math.pi)
 
+        # allowing for variance in distance from camera to center of object
+        dist = radius
+        dist = (2 + random.uniform(-1, 1))*radius
+
+        # computing rectangular coordinates
+        x = dist*np.sin(phi)*np.cos(theta)
+        y = dist*np.sin(phi)*np.sin(theta)
+        z = dist*np.cos(phi)
+        cam_loc = center + Vector([x, y, z])
+
+        # adding camera to scene
+        bpy.ops.object.camera_add(location = cam_loc)
         cam_name = "camera{}".format(i)
         bpy.context.active_object.name = cam_name
         cam = bpy.data.objects[cam_name]
@@ -350,10 +382,21 @@ def generate_defects():
         record_bound_boxes(scene, visible_defects, bounding_boxes, cameras, defect_type, defect_index, res_x, res_y)
         
 
+    # checking if geometry was modified properly
+    bpy.context.scene.objects.active = obj
+    obj.select = True
+    bpy.ops.object.mode_set(mode = "EDIT")
+    bpy.ops.mesh.select_non_manifold()
+    bpy.ops.object.mode_set(mode = "OBJECT")
+    non_manifold = [v for v in obj.data.vertices if v.select]
+    num = len(non_manifold)
+    print("NUM: {}".format(len(non_manifold)))
+
+
     # --- RENDERING IMAGES ---
 
 
-    render_cameras(scene, visible_defects, cameras)
+    #render_cameras(scene, visible_defects, cameras)
     bpy.ops.wm.save_as_mainfile(filepath = "disc1.blend")
     
 
