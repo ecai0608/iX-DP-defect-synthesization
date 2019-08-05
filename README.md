@@ -14,6 +14,7 @@ If we have time:
 - swap out all operator calls for alternative implementations - operator calls always reload the blender scene, which can drastically increase runtime
 - add noise to pits
 - implement bumps
+- right now, it is technically possible for a camera to be generated inside of the model - this is bad for obvious reasons
 
 
 Very problematic but very hard to fix:
