@@ -10,7 +10,7 @@ Possible improvements to make:
 
 
 If we have time:
-- randomize HDRI background and grunge texture (might have to find a couple more)
+- (DONE) randomize HDRI background (might have to find a couple more)
 - swap out all operator calls for alternative implementations - operator calls always reload the blender scene, which can drastically increase runtime
 - add noise to pits
 - implement bumps

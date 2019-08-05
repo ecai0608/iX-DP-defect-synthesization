@@ -18,7 +18,8 @@ import time
 # GLOBAL PARAMETERS:
 # FILEPATH        - filepath to .blend file of model
 # NUM_ITERATIONS  - number of defect models to generate
-# NUM_DEFECTS     - number of defects to randomly generate
+# NUM_DEFECTS_MIN - minimum number of defects to randomly generate
+# NUM_DEFECTS_MAX - maximum number of defects to randomly generate
 # NUM_CAMS        - number of cameras to randomly generate
 # DEFECT_TYPES    - list of possible defect types ("PIT", "BUMP")
 # HDRIS           - list of HDRI backgrounds
@@ -26,11 +27,13 @@ import time
 
 FILEPATH = "disc_brake_model.blend"
 NUM_ITERATIONS = 2
-NUM_DEFECTS = 3
-NUM_CAMS = 3
+NUM_DEFECTS_MIN = 1
+NUM_DEFECTS_MAX = 3
+NUM_CAMS = 4
 DEFECT_TYPES = ["PIT"]
 
-HDRIS = ["Autoshop Engines", "Factory - Plastic Bags", "Industrial Warehouse", "Machine Shop"]
+HDRIS = ["Autoshop Classroom", "Autoshop Engines", "Autoshop Floor Lifts 01", "Autoshop Floor Lifts 02", "Classroom Automotive", 
+"Factory - Plastic Bags 1", "Industrial Warehouse", "Machine Shop 01", "Machine Shop 02"]
 
 
 # function to load in blender scene
@@ -62,11 +65,14 @@ def load_environment():
     bpy.context.user_preferences.addons["cycles"].preferences.devices[0].use = True
     bpy.context.scene.cycles.device = "GPU"
 
+    # randomly picking number of defects
+    num_defects = random.randint(NUM_DEFECTS_MIN, NUM_DEFECTS_MAX)
+
     # list to store bounding box data for each defect
     bounding_boxes = []
 
     # table to store visibility of each defect with respect to each camera
-    visible_defects = np.zeros((NUM_CAMS, NUM_DEFECTS))
+    visible_defects = np.zeros((NUM_CAMS, num_defects))
 
     # computing radius and center of bounding sphere of object
     bb = obj.bound_box
@@ -84,7 +90,7 @@ def load_environment():
     center = Vector([np.mean(bound_xs), np.mean(bound_ys), np.mean(bound_zs)])
     radius = np.sqrt((max_x - min_x)**2 + (max_y - min_y)**2 + (max_z - max_z)**2)/2
     
-    return obj, scene, res_x, res_y, bounding_boxes, visible_defects, center, radius
+    return obj, scene, res_x, res_y, bounding_boxes, visible_defects, center, radius, num_defects
 
 
 # function to randomize environment of scene
@@ -97,7 +103,7 @@ def randomize_environment(obj):
 
     # randomizing HDRI background
     hdri_name = np.random.choice(HDRIS, 1, replace = False)
-    bpy.data.worlds["World"].node_tree.nodes["Environment Texture"].image.filepath = "//HDRIS/{}.exr".format(hdri_name[0])
+    bpy.data.worlds["World"].node_tree.nodes["Environment Texture"].image.filepath = "//HDRIs/{}.exr".format(hdri_name[0])
 
 
 # function to point a given camera to a given location - credit: https://blender.stackexchange.com/a/5220
@@ -312,7 +318,7 @@ def generate_defects(complete_iter):
     # --- LOADING AND SETTING ENVIRONMENT VARIABLES ---
 
 
-    obj, scene, res_x, res_y, bounding_boxes, visible_defects, center, radius = load_environment()
+    obj, scene, res_x, res_y, bounding_boxes, visible_defects, center, radius, num_defects = load_environment()
     randomize_environment(obj)
 
     # generating BVH tree of part model to allow efficient raycasting
@@ -341,7 +347,7 @@ def generate_defects(complete_iter):
 
         # adding camera to scene
         bpy.ops.object.camera_add(location = cam_loc)
-        cam_name = "camera{}-{}_EC".format(complete_iter, i)
+        cam_name = "camera{}-{}".format(complete_iter, i)
         bpy.context.active_object.name = cam_name
         cam = bpy.data.objects[cam_name]
         look_at(cam, obj.location)
@@ -358,7 +364,7 @@ def generate_defects(complete_iter):
 
     # randomly sampling faces (WITH replacement) using weights based on surface area
     weights = calc_tess_weights(obj)
-    rand_faces = np.random.choice(obj.data.tessfaces, NUM_DEFECTS, p = weights, replace = True)
+    rand_faces = np.random.choice(obj.data.tessfaces, num_defects, p = weights, replace = True)
     
     # creating a list to store normal vectors - this will allow us to align defects AFTER we have changed the geometry of the surface
     defect_normals = [np.array(face.normal) for face in rand_faces]
@@ -374,10 +380,9 @@ def generate_defects(complete_iter):
 
     # initializing annotations
     annotations = ""
-    print(annotations)
 
     # placing defects at locations
-    for defect_index in range(NUM_DEFECTS):
+    for defect_index in range(num_defects):
         defect_type = random.choice(DEFECT_TYPES)
         defect_loc = defect_locs[defect_index]
 
@@ -404,7 +409,6 @@ def generate_defects(complete_iter):
     bpy.ops.mesh.select_non_manifold()
     bpy.ops.object.mode_set(mode = "OBJECT")
     non_manifold_verts = [v for v in obj.data.vertices if v.select]
-    print(len(non_manifold_verts))
     
     # will be set to True if the resulting model is manifold, and render_iterations will not repeat the defect generation
     manifold = False
@@ -428,11 +432,11 @@ def render_iterations():
     # iteratively generating defect models
     complete_iters = 0
     while (complete_iters < NUM_ITERATIONS):
-        print(complete_iters)
         manifold, scene, visible_defects, cameras = generate_defects(complete_iters)
         # only producing renders and moving to next iteration if deformed model is still a manifold
         if (manifold):
             complete_iters = complete_iters + 1
+            print("RENDERING ITERATION: {}".format(complete_iters))
             render_cameras(scene, visible_defects, cameras)
 
 
