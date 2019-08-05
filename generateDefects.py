@@ -25,7 +25,7 @@ import time
 # -------------------------------------------------------------------------------
 
 FILEPATH = "disc_brake_model.blend"
-NUM_ITERATIONS = 7
+NUM_ITERATIONS = 2
 NUM_DEFECTS = 3
 NUM_CAMS = 3
 DEFECT_TYPES = ["PIT"]
@@ -56,6 +56,11 @@ def load_environment():
     render = scene.render
     res_x = render.resolution_x*(scene.render.resolution_percentage / 100)
     res_y = render.resolution_y*(scene.render.resolution_percentage / 100)
+
+    # setting GPU settings
+    bpy.context.user_preferences.addons["cycles"].preferences.compute_device_type = "CUDA"
+    bpy.context.user_preferences.addons["cycles"].preferences.devices[0].use = True
+    bpy.context.scene.cycles.device = "GPU"
 
     # list to store bounding box data for each defect
     bounding_boxes = []
@@ -190,7 +195,7 @@ def record_bound_boxes(scene, visible_defects, bounding_boxes, cameras, defect_t
             max_y = min(res_y, max_y)
 
             # writing image coordinates to text file
-            binfile = open("renders/{}.txt".format(cam.name), "a")
+            binfile = open("camera_metadata/{}.txt".format(cam.name), "a")
             binfile.write("{}  |  ".format(defect_type))
             binfile.write("({}, {})  ({}, {})  ({}, {})  ({}, {})\n".format(min_x, min_y, min_x, max_y, max_x, min_y, max_x, max_y))
             binfile.close()
@@ -199,7 +204,6 @@ def record_bound_boxes(scene, visible_defects, bounding_boxes, cameras, defect_t
             new_annotations = new_annotations + "renders/{}.txt,{},{},{},{},{}\n".format(cam.name, min_x, min_y, max_x, max_y, defect_type)
     
     return new_annotations
-
 
 
 # function to subtract defect models from part model
@@ -337,14 +341,14 @@ def generate_defects(complete_iter):
 
         # adding camera to scene
         bpy.ops.object.camera_add(location = cam_loc)
-        cam_name = "camera{}-{}".format(complete_iter, i)
+        cam_name = "camera{}-{}_EC".format(complete_iter, i)
         bpy.context.active_object.name = cam_name
         cam = bpy.data.objects[cam_name]
         look_at(cam, obj.location)
         cameras.append(cam)
 
         # opening text file to store metadata for newly generated camera
-        binfile = open("renders/{}.txt".format(cam_name), "w")
+        binfile = open("camera_metadata/{}.txt".format(cam_name), "w")
         binfile.write("Image Resolution: {}x{}\n".format(res_x, res_y))
         binfile.close()
 
