@@ -19,3 +19,9 @@ If we have time:
 
 Very problematic but very hard to fix:
 - (DONE?) need to completely get rid of EXCEPTION_ACCESS_VIOLATION errors. These completely crash blender and have no traceback making them EXTREMELY difficult to deal with. Since we're most likely running everything from one script, running into one of these errors can be very costly since we will have to start everything over again. The primary cause for this error seems to be mishandled memory allocation - blender seems to pass many variables regarding object data by reference rather than by value. Need to go back through the script and extract data ASAP in any instance where a variable (like the part model, or a defect model) will likely be modified down the road.
+
+
+TO RUN THE SCRIPT:
+- add unique label to camera name to prevent name duplication (line 350)
+- if not rendering on CUDA-compatible GPU, remove or comment out lines 63-66
+- if rendering on CPU, decrease tile size to 16x16 or 32x32 (this can be done manually in the disc_brake_manifold.blend file)
