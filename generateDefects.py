@@ -17,14 +17,16 @@ import time
 # -------------------------------------------------------------------------------
 # GLOBAL PARAMETERS:
 # FILEPATH        - filepath to .blend file of model
+# NUM_ITERATIONS  - number of defect models to generate
 # NUM_DEFECTS     - number of defects to randomly generate
 # NUM_CAMS        - number of cameras to randomly generate
 # DEFECT_TYPES    - list of possible defect types ("PIT", "BUMP")
 # -------------------------------------------------------------------------------
 
 FILEPATH = "disc_brake_model.blend"
-NUM_DEFECTS = 6
-NUM_CAMS = 10
+NUM_ITERATIONS = 1
+NUM_DEFECTS = 3
+NUM_CAMS = 3
 DEFECT_TYPES = ["PIT"]
 
 
@@ -86,6 +88,8 @@ def randomize_environment(obj):
     obj.rotation_euler[2] = random.uniform(0, 2*math.pi)
     bpy.ops.object.transform_apply(location = True, rotation = True, scale = True)
 
+    # TODO: randomize HDRI
+
 
 # function to point a given camera to a given location - credit: https://blender.stackexchange.com/a/5220
 def look_at(obj_camera, point):
@@ -114,11 +118,7 @@ def calc_tess_weights(obj):
 def record_visible(obj, scene, visible_defects, cameras, bvh, defect_index):
     # obtaining all new defect vertices
     new_vertices = [v.co.copy() for v in obj.data.vertices if v.select]
-    """
-    for v in obj.data.vertices:
-        if v.select:
-            new_vertices.append(v.co.copy())
-    """
+
     # deselecting all new vertices
     bpy.context.scene.objects.active = obj
     bpy.ops.object.mode_set(mode = "EDIT")
@@ -162,7 +162,7 @@ def record_bound_boxes(scene, visible_defects, bounding_boxes, cameras, defect_t
             bound_xs = []
             bound_ys = []
             for vert_index in range(len(bb)):
-                vert_coords = Vector(bb[vert_index])
+                vert_coords = bb[vert_index]
 
                 # computing coordinates in camera space
                 co_2d = world_to_camera_view(scene, cam, vert_coords)
@@ -224,7 +224,7 @@ def subtract_defect(obj, defect, defect_type):
 def render_cameras(scene, visible_defects, cameras):
     # iterating through each randomly generated camera
     for cam_index in range(NUM_CAMS):
-        if (sum(visible_defects[cam_index][:]) >= 0):
+        if (sum(visible_defects[cam_index][:]) > 0):
             cam = cameras[cam_index]
 
             # setting camera to active camera
@@ -295,7 +295,6 @@ def build_bump(defect_loc, defect_index, align, noise):
 
 # function to generate defects on part model (obj)
 def generate_defects():
-    reset_model = False
 
 
     # --- LOADING AND SETTING ENVIRONMENT VARIABLES ---
@@ -348,7 +347,7 @@ def generate_defects():
 
     # --- CREATING DEFECTS ON 3D MODEL ---
 
-    
+
     # randomly sampling faces (WITH replacement) using weights based on surface area
     weights = calc_tess_weights(obj)
     rand_faces = np.random.choice(obj.data.tessfaces, NUM_DEFECTS, p = weights, replace = True)
@@ -371,33 +370,51 @@ def generate_defects():
         defect_loc = defect_locs[defect_index]
         print(defect_type)
 
-        # creating defect model and deforming surface of part model
+        # creating defect model
         align = defect_normals[defect_index]
         defect = build_pit(defect_loc, defect_index, align)
-        bounding_boxes.append(defect.bound_box)
+
+        # extracting bounding box coordinates
+        bb_verts = [Vector(v) for v in defect.bound_box]
+        bounding_boxes.append(bb_verts)
+
+        # deforming part surface with defect model
         subtract_defect(obj, defect, defect_type)
 
         # recording metadata regarding visibility and location of defect
         record_visible(obj, scene, visible_defects, cameras, bvh, defect_index)
         record_bound_boxes(scene, visible_defects, bounding_boxes, cameras, defect_type, defect_index, res_x, res_y)
-        
 
+    
     # checking if geometry was modified properly
     bpy.context.scene.objects.active = obj
     obj.select = True
     bpy.ops.object.mode_set(mode = "EDIT")
     bpy.ops.mesh.select_non_manifold()
     bpy.ops.object.mode_set(mode = "OBJECT")
-    non_manifold = [v for v in obj.data.vertices if v.select]
-    num = len(non_manifold)
-    print("NUM: {}".format(len(non_manifold)))
+    non_manifold_verts = [v for v in obj.data.vertices if v.select]
+    print("NUM: {}".format(len(non_manifold_verts)))
+    
+    # will be set to False if the resulting model is non-manifold, and render_iterations will repeat the defect generation
+    manifold = True
+    if (len(non_manifold_verts) > 0):
+        manifold = False
 
-
-    # --- RENDERING IMAGES ---
-
-
-    #render_cameras(scene, visible_defects, cameras)
-    bpy.ops.wm.save_as_mainfile(filepath = "disc1.blend")
+    return manifold, scene, visible_defects, cameras
     
 
-generate_defects()
+# function to generate renders of correctly deformed part models
+def render_iterations():
+    complete_iters = 0
+    while (complete_iters < NUM_ITERATIONS):
+        print(complete_iters)
+        manifold, scene, visible_defects, cameras = generate_defects()
+        # only producing renders and moving to next iteration if deformed model is still a manifold
+        if (manifold):
+            complete_iters = complete_iters + 1
+            render_cameras(scene, visible_defects, cameras)
+            bpy.ops.wm.save_as_mainfile(filepath = "disc1.blend")
+
+
+
+render_iterations()
