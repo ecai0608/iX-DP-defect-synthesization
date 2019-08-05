@@ -3,9 +3,9 @@
 Possible improvements to make:
 - (DONE) make camera placement uniformly random with respect to bounding sphere
 - (DONE) randomize rotation of object part so that shots from the same angle do not always have the same background
-- (ALMOST DONE) need to fix issue of boolean difference modifier not working properly all the time (can check if object is manifold)
-        - still need to update metadata generation - metadata needs to not only specify which camera, but which iteration as well.
-        - annotations.csv needs to be opened outside of generate_defects()
+- (DONE) need to fix issue of boolean difference modifier not working properly all the time (can check if object is manifold)
+        -(DONE) still need to update metadata generation - metadata needs to not only specify which camera, but which iteration as well.
+        -(DONE) annotations.csv needs to be opened outside of generate_defects()
 
 
 

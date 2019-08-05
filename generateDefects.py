@@ -21,21 +21,23 @@ import time
 # NUM_DEFECTS     - number of defects to randomly generate
 # NUM_CAMS        - number of cameras to randomly generate
 # DEFECT_TYPES    - list of possible defect types ("PIT", "BUMP")
+# HDRIS           - list of HDRI backgrounds
 # -------------------------------------------------------------------------------
 
 FILEPATH = "disc_brake_model.blend"
-NUM_ITERATIONS = 1
+NUM_ITERATIONS = 7
 NUM_DEFECTS = 3
 NUM_CAMS = 3
 DEFECT_TYPES = ["PIT"]
 
+HDRIS = ["Autoshop Engines", "Factory - Plastic Bags", "Industrial Warehouse", "Machine Shop"]
 
 
 # function to load in blender scene
 def load_environment():
     # opening .blend file
     bpy.ops.wm.open_mainfile(filepath = FILEPATH)
-    
+
     # setting obj
     obj = bpy.data.objects["Object"]
     bpy.context.scene.objects.active = obj
@@ -88,7 +90,9 @@ def randomize_environment(obj):
     obj.rotation_euler[2] = random.uniform(0, 2*math.pi)
     bpy.ops.object.transform_apply(location = True, rotation = True, scale = True)
 
-    # TODO: randomize HDRI
+    # randomizing HDRI background
+    hdri_name = np.random.choice(HDRIS, 1, replace = False)
+    bpy.data.worlds["World"].node_tree.nodes["Environment Texture"].image.filepath = "//HDRIS/{}.exr".format(hdri_name[0])
 
 
 # function to point a given camera to a given location - credit: https://blender.stackexchange.com/a/5220
@@ -152,6 +156,9 @@ def record_visible(obj, scene, visible_defects, cameras, bvh, defect_index):
 def record_bound_boxes(scene, visible_defects, bounding_boxes, cameras, defect_type, defect_index, res_x, res_y):
     bb = bounding_boxes[defect_index]
     
+    # initializing new_annotations
+    new_annotations = ""
+
     # iterating through each randomly generated camera
     for cam_index in range(NUM_CAMS):
         cam = cameras[cam_index]
@@ -188,10 +195,11 @@ def record_bound_boxes(scene, visible_defects, bounding_boxes, cameras, defect_t
             binfile.write("({}, {})  ({}, {})  ({}, {})  ({}, {})\n".format(min_x, min_y, min_x, max_y, max_x, min_y, max_x, max_y))
             binfile.close()
 
-            # writing to annotations
-            binfile = open("annotations.csv", "a")
-            binfile.write("renders/{}.txt,{},{},{},{},{}\n".format(cam.name, min_x, min_y, max_x, max_y, defect_type))
-            binfile.close()
+            # appending to annotations
+            new_annotations = new_annotations + "renders/{}.txt,{},{},{},{},{}\n".format(cam.name, min_x, min_y, max_x, max_y, defect_type)
+    
+    return new_annotations
+
 
 
 # function to subtract defect models from part model
@@ -294,7 +302,7 @@ def build_bump(defect_loc, defect_index, align, noise):
 
 
 # function to generate defects on part model (obj)
-def generate_defects():
+def generate_defects(complete_iter):
 
 
     # --- LOADING AND SETTING ENVIRONMENT VARIABLES ---
@@ -329,7 +337,7 @@ def generate_defects():
 
         # adding camera to scene
         bpy.ops.object.camera_add(location = cam_loc)
-        cam_name = "camera{}".format(i)
+        cam_name = "camera{}-{}".format(complete_iter, i)
         bpy.context.active_object.name = cam_name
         cam = bpy.data.objects[cam_name]
         look_at(cam, obj.location)
@@ -340,10 +348,6 @@ def generate_defects():
         binfile.write("Image Resolution: {}x{}\n".format(res_x, res_y))
         binfile.close()
 
-    # creating annotations .csv file
-    binfile = open("annotations.csv", "w")
-    binfile.close()
-    
 
     # --- CREATING DEFECTS ON 3D MODEL ---
 
@@ -364,11 +368,14 @@ def generate_defects():
     bpy.data.textures.new("noise", type = "DISTORTED_NOISE")
     noise = bpy.data.textures["noise"]
 
+    # initializing annotations
+    annotations = ""
+    print(annotations)
+
     # placing defects at locations
     for defect_index in range(NUM_DEFECTS):
         defect_type = random.choice(DEFECT_TYPES)
         defect_loc = defect_locs[defect_index]
-        print(defect_type)
 
         # creating defect model
         align = defect_normals[defect_index]
@@ -383,7 +390,7 @@ def generate_defects():
 
         # recording metadata regarding visibility and location of defect
         record_visible(obj, scene, visible_defects, cameras, bvh, defect_index)
-        record_bound_boxes(scene, visible_defects, bounding_boxes, cameras, defect_type, defect_index, res_x, res_y)
+        annotations = annotations + record_bound_boxes(scene, visible_defects, bounding_boxes, cameras, defect_type, defect_index, res_x, res_y)
 
     
     # checking if geometry was modified properly
@@ -393,27 +400,36 @@ def generate_defects():
     bpy.ops.mesh.select_non_manifold()
     bpy.ops.object.mode_set(mode = "OBJECT")
     non_manifold_verts = [v for v in obj.data.vertices if v.select]
-    print("NUM: {}".format(len(non_manifold_verts)))
+    print(len(non_manifold_verts))
     
-    # will be set to False if the resulting model is non-manifold, and render_iterations will repeat the defect generation
-    manifold = True
-    if (len(non_manifold_verts) > 0):
-        manifold = False
+    # will be set to True if the resulting model is manifold, and render_iterations will not repeat the defect generation
+    manifold = False
+    if (len(non_manifold_verts) == 0):
+        manifold = True
+        # only record metadata to annotations.csv if the defect model is properly generated
+        binfile = open("annotations.csv", "a")
+        binfile.write(annotations)
+        binfile.close()
+
 
     return manifold, scene, visible_defects, cameras
     
 
 # function to generate renders of correctly deformed part models
 def render_iterations():
+    # creating annotations .csv file
+    binfile = open("annotations.csv", "w")
+    binfile.close()
+
+    # iteratively generating defect models
     complete_iters = 0
     while (complete_iters < NUM_ITERATIONS):
         print(complete_iters)
-        manifold, scene, visible_defects, cameras = generate_defects()
+        manifold, scene, visible_defects, cameras = generate_defects(complete_iters)
         # only producing renders and moving to next iteration if deformed model is still a manifold
         if (manifold):
             complete_iters = complete_iters + 1
             render_cameras(scene, visible_defects, cameras)
-            bpy.ops.wm.save_as_mainfile(filepath = "disc1.blend")
 
 
 
